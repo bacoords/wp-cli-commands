@@ -81,15 +81,19 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			$total_plugins = count( $filtered_plugins );
 
 			foreach ( $filtered_plugins as $plugin ) {
+				// Clear the terminal screen based on OS at the start of each iteration
+				if ( defined( 'PHP_OS' ) && 'WINNT' === PHP_OS ) {
+					system( 'cls' ); // Windows
+				} else {
+					system( 'clear' ); // Unix-like systems
+				}
+
 				WP_CLI::line( '' );
 				WP_CLI::line( '=== Current Plugin Status ===' );
 
 				// Display numbered list of all plugins.
 				foreach ( $filtered_plugins as $index => $list_plugin ) {
-					$plugin_file = WP_PLUGIN_DIR . '/' . $list_plugin;
-					$plugin_data = get_plugin_data( $plugin_file );
-					$plugin_name = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : basename( dirname( $list_plugin ) ) . '/' . basename( $list_plugin );
-
+					$plugin_name = basename( dirname( $list_plugin ) ) . '/' . basename( $list_plugin );
 					if ( $index === $current_index ) {
 						// Highlight currently deactivated plugin in yellow.
 						WP_CLI::line(
@@ -106,10 +110,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				}
 
 				WP_CLI::line( '' );
-				$plugin_file = WP_PLUGIN_DIR . '/' . $plugin;
-				$plugin_data = get_plugin_data( $plugin_file );
-				$plugin_name = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : $plugin;
-				WP_CLI::warning( sprintf( 'Testing plugin %d of %d: %s', $current_index + 1, $total_plugins, $plugin_name ) );
+				WP_CLI::warning( sprintf( 'Testing plugin %d of %d: %s', $current_index + 1, $total_plugins, $plugin ) );
 
 				// Deactivate the plugin.
 				deactivate_plugins( $plugin );
@@ -133,11 +134,11 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 						$answer = strtolower( trim( fgets( STDIN ) ) );
 					}
 				}
-				$continue = $answer === 'y';
+				$continue = 'y' === $answer;
 
 				// Always reactivate the current plugin.
 				activate_plugin( $plugin );
-				WP_CLI::success( sprintf( 'Plugin %s has been reactivated', $plugin_name ) );
+				WP_CLI::success( sprintf( 'Plugin %s has been reactivated', $plugin ) );
 
 				if ( ! $continue ) {
 					WP_CLI::line( '' );
