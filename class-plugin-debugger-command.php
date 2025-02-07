@@ -179,7 +179,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 				// Present options to the user.
 				WP_CLI::line( '' );
-				WP_CLI::line( WP_CLI::colorize( '%GOptions:%n' ) );
+				WP_CLI::line( WP_CLI::colorize( '%BOptions:%n' ) );
 				WP_CLI::line( '  y - Reactivate plugin and continue to next one' );
 				WP_CLI::line( '  n - Reactivate plugin and exit' );
 				WP_CLI::line( '  Ctrl+C - Exit without reactivating (not recommended)' );
