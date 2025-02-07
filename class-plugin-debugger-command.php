@@ -116,7 +116,18 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				WP_CLI::line( '  Ctrl+C - Exit without reactivating (not recommended)' );
 				WP_CLI::line( '' );
 
-				$continue = WP_CLI::confirm( 'Would you like to continue to the next plugin?', false );
+				// Custom confirmation logic that won't exit the script
+				$answer = '';
+				while ( ! in_array( $answer, array( 'y', 'n' ), true ) ) {
+					// Using readline() for input or falling back to fgets()
+					if ( function_exists( 'readline' ) ) {
+						$answer = strtolower( trim( readline( 'Continue to next plugin? [y/n] ' ) ) );
+					} else {
+						WP_CLI::out( 'Continue to next plugin? [y/n] ' );
+						$answer = strtolower( trim( fgets( STDIN ) ) );
+					}
+				}
+				$continue = $answer === 'y';
 
 				// Always reactivate the current plugin.
 				activate_plugin( $plugin );
