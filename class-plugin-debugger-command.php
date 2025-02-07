@@ -74,11 +74,60 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				return;
 			}
 
-			WP_CLI::success( sprintf( 'Found %d active plugins (excluding mu-plugins and dropins). Starting debug cycle...', count( $filtered_plugins ) ) );
+			// Clear the screen initially
+			if ( defined( 'PHP_OS' ) && 'WINNT' === PHP_OS ) {
+				system( 'cls' ); // Windows
+			} else {
+				system( 'clear' ); // Unix-like systems
+			}
+
+			// Make sure get_plugin_data is available
+			if ( ! function_exists( 'get_plugin_data' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+			}
+
+			// Show initial screen with plugin list
+			WP_CLI::line( '' );
+			WP_CLI::line( '=== Plugin Debug Cycle ===' );
+			WP_CLI::line( '' );
+			WP_CLI::success( sprintf( 'Found %d active plugins (excluding mu-plugins and dropins):', count( $filtered_plugins ) ) );
+			WP_CLI::line( '' );
+
+			// Display initial list of all plugins
+			foreach ( $filtered_plugins as $index => $plugin ) {
+				$plugin_file = WP_PLUGIN_DIR . '/' . $plugin;
+				$plugin_data = get_plugin_data( $plugin_file );
+				$plugin_name = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : basename( dirname( $plugin ) ) . '/' . basename( $plugin );
+				WP_CLI::line( sprintf( '%d. %s', $index + 1, $plugin_name ) );
+			}
+
+			WP_CLI::line( '' );
+			WP_CLI::warning( 'This will systematically deactivate and reactivate each plugin.' );
+			WP_CLI::line( '' );
+
+			// Ask for confirmation to proceed
+			$answer = '';
+			while ( ! in_array( $answer, array( 'y', 'n' ), true ) ) {
+				if ( function_exists( 'readline' ) ) {
+					$answer = strtolower( trim( readline( 'Ready to begin? [y/n] ' ) ) );
+				} else {
+					WP_CLI::out( 'Ready to begin? [y/n] ' );
+					$answer = strtolower( trim( fgets( STDIN ) ) );
+				}
+			}
+
+			if ( 'n' === $answer ) {
+				WP_CLI::line( '' );
+				WP_CLI::success( 'Exiting plugin debug cycle.' );
+				return;
+			}
 
 			// Track current plugin index.
 			$current_index = 0;
 			$total_plugins = count( $filtered_plugins );
+
+			// Initialize previous message.
+			$previous_message = '';
 
 			foreach ( $filtered_plugins as $plugin ) {
 				// Clear the terminal screen based on OS at the start of each iteration
@@ -88,13 +137,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 					system( 'clear' ); // Unix-like systems
 				}
 
-				WP_CLI::line( '' );
 				WP_CLI::line( '=== Current Plugin Status ===' );
-
-				// Make sure get_plugin_data is available
-				if ( ! function_exists( 'get_plugin_data' ) ) {
-					require_once ABSPATH . 'wp-admin/includes/plugin.php';
-				}
 
 				// Display numbered list of all plugins.
 				foreach ( $filtered_plugins as $index => $list_plugin ) {
@@ -103,13 +146,14 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 					$plugin_name = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : basename( dirname( $list_plugin ) ) . '/' . basename( $list_plugin );
 
 					if ( $index === $current_index ) {
-						// Highlight currently deactivated plugin in yellow.
+						// Highlight currently deactivated plugin in red
 						WP_CLI::line(
-							sprintf(
-								'%d. %s %s',
-								$index + 1,
-								$plugin_name,
-								WP_CLI::colorize( '%Y(currently deactivated)%n' )
+							WP_CLI::colorize(
+								sprintf(
+									'%%R%d. %s (currently deactivated)%%n',
+									$index + 1,
+									$plugin_name
+								)
 							)
 						);
 					} else {
@@ -118,10 +162,17 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				}
 
 				WP_CLI::line( '' );
+
+				// Display previous plugin's reactivation message if exists.
+				if ( ! empty( $previous_message ) ) {
+					WP_CLI::success( $previous_message );
+					WP_CLI::line( '' );
+				}
+
 				$plugin_file = WP_PLUGIN_DIR . '/' . $plugin;
 				$plugin_data = get_plugin_data( $plugin_file );
 				$plugin_name = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : $plugin;
-				WP_CLI::warning( sprintf( 'Testing plugin %d of %d: %s', $current_index + 1, $total_plugins, $plugin_name ) );
+				WP_CLI::warning( sprintf( 'Deactivating plugin %d of %d: %s', $current_index + 1, $total_plugins, $plugin_name ) );
 
 				// Deactivate the plugin.
 				deactivate_plugins( $plugin );
@@ -149,10 +200,11 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 				// Always reactivate the current plugin.
 				activate_plugin( $plugin );
-				WP_CLI::success( sprintf( 'Plugin %s has been reactivated', $plugin_name ) );
+				$previous_message = sprintf( 'Plugin %s has been reactivated', $plugin_name );
 
 				if ( ! $continue ) {
 					WP_CLI::line( '' );
+					WP_CLI::success( $previous_message ); // Show final message before exiting
 					WP_CLI::success( 'Exiting plugin debug cycle.' );
 					return;
 				}
@@ -160,6 +212,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				++$current_index;
 			}
 
+			// Show the final plugin's reactivation message
+			if ( ! empty( $previous_message ) ) {
+				WP_CLI::success( $previous_message );
+			}
 			WP_CLI::success( 'Plugin debug cycle completed!' );
 		}
 	}
