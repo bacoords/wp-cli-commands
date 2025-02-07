@@ -86,7 +86,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 				// Display numbered list of all plugins.
 				foreach ( $filtered_plugins as $index => $list_plugin ) {
-					$plugin_name = basename( dirname( $list_plugin ) ) . '/' . basename( $list_plugin );
+					$plugin_file = WP_PLUGIN_DIR . '/' . $list_plugin;
+					$plugin_data = get_plugin_data( $plugin_file );
+					$plugin_name = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : basename( dirname( $list_plugin ) ) . '/' . basename( $list_plugin );
+
 					if ( $index === $current_index ) {
 						// Highlight currently deactivated plugin in yellow.
 						WP_CLI::line(
@@ -103,7 +106,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				}
 
 				WP_CLI::line( '' );
-				WP_CLI::warning( sprintf( 'Testing plugin %d of %d: %s', $current_index + 1, $total_plugins, $plugin ) );
+				$plugin_file = WP_PLUGIN_DIR . '/' . $plugin;
+				$plugin_data = get_plugin_data( $plugin_file );
+				$plugin_name = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : $plugin;
+				WP_CLI::warning( sprintf( 'Testing plugin %d of %d: %s', $current_index + 1, $total_plugins, $plugin_name ) );
 
 				// Deactivate the plugin.
 				deactivate_plugins( $plugin );
@@ -131,7 +137,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 				// Always reactivate the current plugin.
 				activate_plugin( $plugin );
-				WP_CLI::success( sprintf( 'Plugin %s has been reactivated', $plugin ) );
+				WP_CLI::success( sprintf( 'Plugin %s has been reactivated', $plugin_name ) );
 
 				if ( ! $continue ) {
 					WP_CLI::line( '' );
