@@ -16,3 +16,10 @@ This command cycles through all active plugins, deactivating and reactivating th
 wp plugin-debug cycle
 ```
 
+### Binary Search
+
+This command uses a binary search approach to efficiently find problematic plugins by deactivating plugins in groups.
+
+```bash
+wp plugin-debug binary
+```

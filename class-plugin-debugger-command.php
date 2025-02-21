@@ -218,6 +218,202 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			}
 			WP_CLI::success( 'Plugin debug cycle completed!' );
 		}
+
+		/**
+		 * Uses binary search to find problematic plugins.
+		 *
+		 * ## DESCRIPTION
+		 *
+		 * Systematically deactivates plugins in groups using binary search,
+		 * making plugin conflict debugging more efficient.
+		 *
+		 * The command will:
+		 * 1. Deactivate half of the active plugins
+		 * 2. Ask if the issue is fixed
+		 * 3. Based on response, focus on either the active or inactive half
+		 * 4. Repeat until the problematic plugin is identified
+		 *
+		 * ## EXAMPLES
+		 *
+		 *     wp plugin-debug binary
+		 *
+		 * @when after_wp_load
+		 */
+		public function binary() {
+			// Get filtered list of active plugins (excluding mu-plugins and dropins).
+			$active_plugins = get_option( 'active_plugins' );
+
+			// Filter out mu-plugins and dropins.
+			$filtered_plugins = array();
+			foreach ( $active_plugins as $plugin ) {
+				// Skip if plugin is in mu-plugins directory.
+				if ( strpos( $plugin, 'mu-plugins/' ) !== false ) {
+					continue;
+				}
+
+				// Skip WordPress dropins.
+				$dropin        = basename( $plugin );
+				$known_dropins = array(
+					'advanced-cache.php',
+					'db.php',
+					'db-error.php',
+					'install.php',
+					'maintenance.php',
+					'object-cache.php',
+					'php-error.php',
+					'fatal-error-handler.php',
+					'sunrise.php',
+				);
+				if ( in_array( $dropin, $known_dropins, true ) ) {
+					continue;
+				}
+
+				$filtered_plugins[] = $plugin;
+			}
+
+			if ( empty( $filtered_plugins ) ) {
+				WP_CLI::error( 'No regular active plugins found (excluding mu-plugins and dropins).' );
+				return;
+			}
+
+			// Make sure get_plugin_data is available.
+			if ( ! function_exists( 'get_plugin_data' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+			}
+
+			// Initialize search space.
+			$search_space = $filtered_plugins;
+			$step         = 1;
+
+			// Show initial screen.
+			$this->clear_screen();
+			WP_CLI::line( '' );
+			WP_CLI::line( '=== Plugin Debug Binary Search ===' );
+			WP_CLI::line( '' );
+			WP_CLI::success( sprintf( 'Found %d active plugins (excluding mu-plugins and dropins).', count( $filtered_plugins ) ) );
+			WP_CLI::line( '' );
+			WP_CLI::warning( 'This will use binary search to find problematic plugins.' );
+			WP_CLI::line( '' );
+
+			// Display initial list of all plugins.
+			foreach ( $filtered_plugins as $index => $plugin ) {
+				$plugin_file = WP_PLUGIN_DIR . '/' . $plugin;
+				$plugin_data = get_plugin_data( $plugin_file );
+				$plugin_name = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : basename( dirname( $plugin ) ) . '/' . basename( $plugin );
+				WP_CLI::line( sprintf( '%d. %s', $index + 1, $plugin_name ) );
+			}
+
+			WP_CLI::line( '' );
+
+			// Ask for confirmation to proceed.
+			if ( ! $this->confirm( 'Ready to begin?' ) ) {
+				WP_CLI::success( 'Exiting plugin debug binary search.' );
+				return;
+			}
+
+			// Binary search loop.
+			while ( count( $search_space ) > 1 ) {
+				$this->clear_screen();
+				WP_CLI::line( sprintf( '=== Step %d ===', $step ) );
+				WP_CLI::line( '' );
+
+				// Split plugins into two groups.
+				$mid           = floor( count( $search_space ) / 2 );
+				$test_plugins  = array_slice( $search_space, 0, $mid );
+				$other_plugins = array_slice( $search_space, $mid );
+
+				// Deactivate test group.
+				foreach ( $test_plugins as $plugin ) {
+					deactivate_plugins( $plugin );
+				}
+
+				// Display current status.
+				WP_CLI::warning( sprintf( 'Deactivated %d plugins:', count( $test_plugins ) ) );
+				foreach ( $test_plugins as $plugin ) {
+					$plugin_file = WP_PLUGIN_DIR . '/' . $plugin;
+					$plugin_data = get_plugin_data( $plugin_file );
+					$plugin_name = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : basename( dirname( $plugin ) ) . '/' . basename( $plugin );
+					WP_CLI::line( sprintf( '- %s', $plugin_name ) );
+				}
+
+				WP_CLI::line( '' );
+				WP_CLI::line( 'Remaining active plugins:' );
+				foreach ( $other_plugins as $plugin ) {
+					$plugin_file = WP_PLUGIN_DIR . '/' . $plugin;
+					$plugin_data = get_plugin_data( $plugin_file );
+					$plugin_name = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : basename( dirname( $plugin ) ) . '/' . basename( $plugin );
+					WP_CLI::line( sprintf( '- %s', $plugin_name ) );
+				}
+
+				WP_CLI::line( '' );
+
+				// Ask if issue is fixed.
+				$is_fixed = $this->confirm( 'Is the issue fixed with these plugins deactivated?' );
+
+				// Reactivate test group.
+				foreach ( $test_plugins as $plugin ) {
+					activate_plugin( $plugin );
+				}
+
+				// Update search space based on response.
+				if ( $is_fixed ) {
+					// Problem is in the deactivated plugins.
+					$search_space = $test_plugins;
+					WP_CLI::success( 'Problem is in the deactivated group. Narrowing search.' );
+				} else {
+					// Problem is in the still-active plugins.
+					$search_space = $other_plugins;
+					WP_CLI::success( 'Problem is in the active group. Narrowing search.' );
+				}
+
+				WP_CLI::line( '' );
+				if ( ! $this->confirm( 'Continue to next step?' ) ) {
+					WP_CLI::success( 'Exiting plugin debug binary search.' );
+					return;
+				}
+
+				++$step;
+			}
+
+			// Final plugin identified.
+			$problem_plugin = reset( $search_space );
+			$plugin_file    = WP_PLUGIN_DIR . '/' . $problem_plugin;
+			$plugin_data    = get_plugin_data( $plugin_file );
+			$plugin_name    = ! empty( $plugin_data['Name'] ) ? $plugin_data['Name'] : basename( dirname( $problem_plugin ) ) . '/' . basename( $problem_plugin );
+
+			$this->clear_screen();
+			WP_CLI::success( sprintf( 'Identified problematic plugin: %s', $plugin_name ) );
+		}
+
+		/**
+		 * Clears the terminal screen based on OS.
+		 */
+		private function clear_screen() {
+			if ( defined( 'PHP_OS' ) && 'WINNT' === PHP_OS ) {
+				system( 'cls' );
+			} else {
+				system( 'clear' );
+			}
+		}
+
+		/**
+		 * Asks for user confirmation.
+		 *
+		 * @param string $question The question to ask.
+		 * @return bool True if confirmed, false otherwise.
+		 */
+		private function confirm( $question ) {
+			$answer = '';
+			while ( ! in_array( $answer, array( 'y', 'n' ), true ) ) {
+				if ( function_exists( 'readline' ) ) {
+					$answer = strtolower( trim( readline( "$question [y/n] " ) ) );
+				} else {
+					WP_CLI::out( "$question [y/n] " );
+					$answer = strtolower( trim( fgets( STDIN ) ) );
+				}
+			}
+			return 'y' === $answer;
+		}
 	}
 
 	// Register the command.
